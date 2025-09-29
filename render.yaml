@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: backend-freca
+    env: node
+    buildCommand: "npm install"
+    startCommand: "node server.js"
+    plan: free
+    region: oregon
+    envVars:
+      - key: MONGO_URI
+        value: "mongodb+srv://freca:supersecretkey@freca.4gz307w.mongodb.net/?retryWrites=true&w=majority&appName=Freca"
+      - key: PORT
+        value: "3000"

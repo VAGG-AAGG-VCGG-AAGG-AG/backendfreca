@@ -3,6 +3,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const Personal = require('../models/Personal');
+const Cliente = require('../models/Cliente');
 
 const router = express.Router();
 
@@ -26,6 +27,13 @@ router.post('/', upload.single('fotoPerfil'), async (req, res) => {
     const fotoPerfil = req.file ? `/uploads/perfiles/${req.file.filename}` : '';
     const nuevoPersonal = new Personal({ ...data, fotoPerfil });
     await nuevoPersonal.save();
+    // Actualizar modelo Cliente: agregar personalAsignado
+    if (nuevoPersonal.clienteAsignado) {
+      await Cliente.findByIdAndUpdate(
+        nuevoPersonal.clienteAsignado,
+        { $addToSet: { personalAsignado: nuevoPersonal._id } }
+      );
+    }
     res.status(201).json(nuevoPersonal);
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -56,7 +64,22 @@ router.put('/:id', upload.single('fotoPerfil'), async (req, res) => {
         fs.unlinkSync('.' + old.fotoPerfil);
       }
     }
+    const oldPersonal = await Personal.findById(req.params.id);
     const updated = await Personal.findByIdAndUpdate(req.params.id, update, { new: true });
+    // Si cambió el cliente asignado, actualizar ambos modelos
+    if (oldPersonal && oldPersonal.clienteAsignado && (!updated.clienteAsignado || updated.clienteAsignado.toString() !== oldPersonal.clienteAsignado.toString())) {
+      // Quitar de cliente anterior
+      await Cliente.findByIdAndUpdate(
+        oldPersonal.clienteAsignado,
+        { $pull: { personalAsignado: updated._id } }
+      );
+    }
+    if (updated.clienteAsignado) {
+      await Cliente.findByIdAndUpdate(
+        updated.clienteAsignado,
+        { $addToSet: { personalAsignado: updated._id } }
+      );
+    }
     res.json(updated);
   } catch (err) {
     res.status(400).json({ error: err.message });
