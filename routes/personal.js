@@ -2,21 +2,28 @@ const express = require('express');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const AWS = require('aws-sdk');
+const multerS3 = require('multer-s3');
+const s3 = new AWS.S3({
+  region: 'us-east-1' // Cambiar según la región
+});
 const Personal = require('../models/Personal');
 const Cliente = require('../models/Cliente');
 
 const router = express.Router();
 
-// Configuraci�n de almacenamiento para fotos de perfil
-const storage = multer.diskStorage({
-  destination: function (req, file, cb) {
-    cb(null, 'uploads/perfiles/');
+// Configuraci�n de almacenamiento para fotos de perfil
+const storage = multerS3({
+  s3: s3,
+  bucket: 'nombre-del-bucket', // Cambiar por el nombre del bucket
+  metadata: (req, file, cb) => {
+    cb(null, { fieldName: file.fieldname });
   },
-  filename: function (req, file, cb) {
-    const ext = path.extname(file.originalname);
-    cb(null, Date.now() + ext);
+  key: (req, file, cb) => {
+    cb(null, `perfiles/${Date.now()}_${file.originalname}`);
   }
 });
+
 const upload = multer({ storage });
 
 // Crear personal
@@ -24,7 +31,7 @@ router.post('/', upload.single('fotoPerfil'), async (req, res) => {
   try {
     const data = JSON.parse(req.body.data);
     if (data.clienteAsignado === '') delete data.clienteAsignado;
-    const fotoPerfil = req.file ? `/uploads/perfiles/${req.file.filename}` : '';
+    const fotoPerfil = req.file ? req.file.location : '';
     const nuevoPersonal = new Personal({ ...data, fotoPerfil });
     await nuevoPersonal.save();
     // Actualizar modelo Cliente: agregar personalAsignado
@@ -57,7 +64,7 @@ router.put('/:id', upload.single('fotoPerfil'), async (req, res) => {
     if (data.clienteAsignado === '') delete data.clienteAsignado;
     let update = { ...data };
     if (req.file) {
-      update.fotoPerfil = `/uploads/perfiles/${req.file.filename}`;
+      update.fotoPerfil = req.file.location;
       // Eliminar foto anterior si existe
       const old = await Personal.findById(req.params.id);
       if (old && old.fotoPerfil && fs.existsSync('.' + old.fotoPerfil)) {
@@ -66,7 +73,7 @@ router.put('/:id', upload.single('fotoPerfil'), async (req, res) => {
     }
     const oldPersonal = await Personal.findById(req.params.id);
     const updated = await Personal.findByIdAndUpdate(req.params.id, update, { new: true });
-    // Si cambi� el cliente asignado, actualizar ambos modelos
+    // Si cambi� el cliente asignado, actualizar ambos modelos
     if (oldPersonal && oldPersonal.clienteAsignado && (!updated.clienteAsignado || updated.clienteAsignado.toString() !== oldPersonal.clienteAsignado.toString())) {
       // Quitar de cliente anterior
       await Cliente.findByIdAndUpdate(
@@ -91,7 +98,7 @@ router.delete('/:id', async (req, res) => {
   try {
     const personal = await Personal.findByIdAndDelete(req.params.id);
     if (personal && personal.fotoPerfil && fs.existsSync('.' + personal.fotoPerfil)) {
-      fs.unlinkSync('.' + personal.fotoPerfil);
+      // Aquí no se elimina el archivo de S3 automáticamente
     }
     res.json({ success: true });
   } catch (err) {
